@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# Adapted from nixl/examples/python/nixl_api_example.py
+
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -75,7 +76,7 @@ class NixlWrapper:
         # For simplicity, the test is 1:1, so just set string once receive metadata
         self._added_remote_name = None
         
-    def __del__(self):
+    def cleanup(self):
         if self._added_remote_name:
             self.nixl_agent.remove_remote_agent(self._added_remote_name)
         self.nixl_agent.deregister_memory(self._reg_descs)
@@ -118,10 +119,10 @@ class Initiator(NixlWrapper):
     def __init__(self, **kwargs):
         super().__init__(name="initiator", **kwargs)
 
-    def __del__(self):
+    def cleanup(self):
         if not TEST_DRAM:
             logger.info(f"{self.name} tensors: {self._tensors}")
-        super().__del__()
+        super().cleanup()
 
     def blocking_read_remote(self, aggregated_metadata: AggregatedAgentMetadata) -> Any:
         remote_name = self._add_remote_agent(aggregated_metadata.agent_metadata)
@@ -177,6 +178,9 @@ def test_nixl_api_no_ray():
     target_thread.join()
 
     logger.info("Test complete")
+
+    target.cleanup()
+    initiator.cleanup()
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
