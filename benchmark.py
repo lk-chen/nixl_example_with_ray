@@ -7,7 +7,8 @@ import threading
 import time
 import ray
 from tabulate import tabulate
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Annotated
 
 from nixl_example_no_ray import Target, Initiator
 from nixl_example_ray import TargetActor, InitiatorActor
@@ -102,6 +103,7 @@ def bm_nixl_ray(*, buf_size: int = BUF_SIZE, concurrency: int = 1, num_trials: i
     for initiator, name in zip(initiators, initiator_names):
         _tags = [f"trial_{j}".encode() for j in range(num_trials)]
         tags[name] = _tags
+        # Even though we create all handles at once, ray will execute them sequentially.
         initiator_handles.extend([initiator.blocking_read_remote.remote(target_meta, tag=tag) for tag in _tags])
 
     target_handles = []
@@ -128,11 +130,15 @@ def bm_nixl_ray(*, buf_size: int = BUF_SIZE, concurrency: int = 1, num_trials: i
 
 
 class BenchmarkResult(BaseModel):
-    use_ray: str
-    duration: float
-    bandwidth: float
-    concurrency: int
-    num_trials: int
+    use_ray: Annotated[str, Field(alias="With Ray")]
+    duration: Annotated[float, Field(alias="Time (s)")]
+    bandwidth: Annotated[float, Field(alias="Bandwidth (GB/s)")]
+    concurrency: Annotated[int, Field(alias="Concurrent Readers")]
+    num_trials: Annotated[int, Field(alias="Number of Trials")]
+
+    model_config = {
+        "populate_by_name": True,
+    }
 
 
 if __name__ == "__main__":
@@ -147,5 +153,5 @@ if __name__ == "__main__":
         duration, bandwidth = bm_nixl_ray(concurrency=concurrency, num_trials=num_trials)
         results.append(BenchmarkResult(use_ray="Y", duration=duration, bandwidth=bandwidth, concurrency=concurrency, num_trials=num_trials))
 
-    # Print in sheet format
-    print(tabulate([results.model_dump() for results in results], headers="keys", tablefmt="grid"))
+    # Print in sheet format with custom field names
+    print(tabulate([result.model_dump(by_alias=True) for result in results], headers="keys", tablefmt="grid"))
