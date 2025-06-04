@@ -14,11 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import ray
 import logging
 
-from nixl_example_no_ray import Target, Initiator
+from nixl_example_no_ray import Target, Initiator, BUF_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +48,14 @@ def test_nixl_api_with_ray():
         num_gpus=1,
     )
 
-    target = TargetActor.options(**remote_options).remote()
-    initiator = InitiatorActor.options(**remote_options).remote()
+    target = TargetActor.options(**remote_options).remote(buf_size=BUF_SIZE)
+    initiator = InitiatorActor.options(**remote_options).remote(buf_size=BUF_SIZE)
 
     target_meta = target.prepare_for_read.remote()
 
-    handle_initiator = initiator.blocking_read_remote.remote(target_meta)
+    handle_initiator = initiator.blocking_read_remote.remote(target_meta, tag=b"UUID1")
 
-    handle_target = target.blocking_wait_for_read.remote(initiator.name.remote(), b"UUID1")
+    handle_target = target.blocking_wait_for_read.remote(initiator.name.remote(), tag=b"UUID1")
 
     ray.get([handle_initiator, handle_target])
 

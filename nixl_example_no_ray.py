@@ -32,7 +32,7 @@ logger = logging.getLogger("ray")
 # True to test DRAM(cpu), False to test tensors(gpu)
 TEST_DRAM=False
 
-buf_size = 32
+BUF_SIZE = 32
 
 @dataclass
 class AggregatedAgentMetadata:
@@ -43,7 +43,7 @@ class AggregatedAgentMetadata:
     xfer_descs: nixlXferDList
 
 class NixlWrapper:
-    def __init__(self, name: str, **kwargs):
+    def __init__(self, name: str, *, buf_size: int, **kwargs):
         logger.info(f"Using NIXL Plugins from: {os.environ['NIXL_PLUGIN_DIR']}")
 
         self.name = name
@@ -101,8 +101,8 @@ class NixlWrapper:
 
 
 class Target(NixlWrapper):
-    def __init__(self, **kwargs):
-        super().__init__(name="target", **kwargs)
+    def __init__(self, *, name: str = "target", buf_size: int = BUF_SIZE, **kwargs):
+        super().__init__(name=name, buf_size=buf_size, **kwargs)
 
     def prepare_for_read(self) -> AggregatedAgentMetadata:
         return AggregatedAgentMetadata(
@@ -111,23 +111,22 @@ class Target(NixlWrapper):
             xfer_descs=self.local_xfer_descs
         )
 
-    def blocking_wait_for_read(self, reader_name: str, tag: bytes) -> None:
+    def blocking_wait_for_read(self, reader_name: str, *, tag: bytes = b"UUID1") -> None:
         while not self.nixl_agent.check_remote_xfer_done(remote_agent_name= reader_name,  lookup_tag=tag):
-            time.sleep(0.01)
+            time.sleep(0.001)
 
 class Initiator(NixlWrapper):
-    def __init__(self, **kwargs):
-        super().__init__(name="initiator", **kwargs)
+    def __init__(self, *, name: str = "initiator", buf_size: int = BUF_SIZE, **kwargs):
+        super().__init__(name=name, buf_size=buf_size, **kwargs)
 
     def cleanup(self):
         if not TEST_DRAM:
             logger.info(f"{self.name} tensors: {self._tensors}")
         super().cleanup()
 
-    def blocking_read_remote(self, aggregated_metadata: AggregatedAgentMetadata) -> Any:
+    def blocking_read_remote(self, aggregated_metadata: AggregatedAgentMetadata, *, tag: bytes = b"UUID1") -> Any:
         remote_name = self._add_remote_agent(aggregated_metadata.agent_metadata)
         self._added_remote_name = remote_name
-        tag = b"UUID1"
         # vllm uses prep_xfer_* instead.
         read_handle = self.nixl_agent.initialize_xfer(
             operation="READ",
@@ -153,21 +152,21 @@ class Initiator(NixlWrapper):
                 logger.info(f"{self.name} transfer DONE")
                 break
             else:
-                logger.info(f"{self.name} transfer {state}")
-            time.sleep(0.01)
+                logger.debug(f"{self.name} transfer {state}")
+            time.sleep(0.001)
 
         self.nixl_agent.release_xfer_handle(read_handle)
 
 def test_nixl_api_no_ray():
-    target = Target()
-    initiator = Initiator()
+    target = Target(buf_size=BUF_SIZE)
+    initiator = Initiator(buf_size=BUF_SIZE)
     target_meta = target.prepare_for_read()
 
     def initiator_thread():
-        initiator.blocking_read_remote(target_meta)
+        initiator.blocking_read_remote(target_meta, tag=b"UUID1")
 
     def target_thread():
-        target.blocking_wait_for_read(initiator.name, b"UUID1")
+        target.blocking_wait_for_read(initiator.name, tag=b"UUID1")
 
     import threading
     initiator_thread = threading.Thread(target=initiator_thread)
